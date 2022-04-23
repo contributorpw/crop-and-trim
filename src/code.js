@@ -12,10 +12,11 @@
  * Adds a menu when the spreadsheet is opened.
  */
 function onOpen() {
-  SpreadsheetApp.getUi().createAddonMenu()
-      .addItem('Crop to data', 'cropToData')
-      .addItem('Crop to selection', 'cropToSelection')
-      .addToUi();
+  SpreadsheetApp.getUi()
+    .createAddonMenu()
+    .addItem('Crop to data', 'cropToData')
+    .addItem('Crop to selection', 'cropToSelection')
+    .addToUi();
 }
 
 /**
@@ -80,8 +81,7 @@ function cropToRange(range) {
  */
 function showCompleteMessage(spreadsheet) {
   var title = 'Crop Sheet';
-  var message = HtmlService.createHtmlOutputFromFile('complete_message')
-      .getContent();
+  var message = HtmlService.createHtmlOutputFromFile('complete_message').getContent();
   var timeoutSeconds = 8;
   spreadsheet.toast(message, title, timeoutSeconds);
 }

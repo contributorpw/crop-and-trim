@@ -1,140 +1,275 @@
-const exec = require('child_process').exec;
-const fs = require('fs');
-const readline = require('readline');
-
-const cwsupload = require('chrome-webstore-upload');
-const eslint = require('gulp-eslint');
-const {google} = require('googleapis');
 const gulp = require('gulp');
-const jeditor = require('gulp-json-editor');
-const zip = require('gulp-zip');
+const spawn = require('child_process').spawn;
+const del = require('del');
+const packageJson = require('./package.json');
+const fs = require('fs');
 
-const CWS_ID = 'aojcceglbipehndciapjedoomockgagl';
+const watchDelay = (packageJson.devSettings ? packageJson.devSettings.watchDelay : undefined) || 3000;
 
+const argv = {
+  buildpart: 'build',
+};
+
+const version = [packageJson.version, '⎇'];
 /**
- * Checks the code for style errors.
+ * Cleans build
  */
-gulp.task('lint', () => {
-  return gulp.src(['src/**/*.js', 'gulpfile.js'])
-      .pipe(eslint({
-        baseConfig: require('./.eslintrc.js')
-      }))
-      .pipe(eslint.format())
-      .pipe(eslint.failAfterError());
+gulp.task('clean', function () {
+  return del(`${argv.buildpart}`);
 });
 
 /**
- * Updates the Chrome Web Store manifest to point to the latest version of the
- * scriipt.
+ * Cleans build
  */
-gulp.task('latest', () => {
-  // Determine the latest version of the script.
-  exec('clasp versions', (err, out) => {
-    if (err) return console.error(err);
-    const line = out.trim().split('\n').pop();
-    const version = line.split(' ')[0];
+gulp.task('clean-clients', function () {
+  return del('clients/build');
+});
+/**
+ * Preparation of the configuration file .clasp.json
+ */
+gulp.task('preparation-clasp-json', function preparationClaspJson() {
+  return gulp.src(`./settings/${argv.part}/.clasp.json`).pipe(gulp.dest('./'));
+});
 
-    // Update the manifest.
-    gulp.src('webstore/manifest.json')
-      .pipe(jeditor((json) => {
-        json.container_info.container_version = version;
-        return json;
-      }))
-      .pipe(gulp.dest('webstore'));
+/**
+ * Preparation of assets files
+ */
+gulp.task('preparation-assets', function preparationAssets() {
+  return gulp
+    .src(`./settings/${argv.part}/assets/**/*.{ts,js,gs,json,html}`, {
+      base: `./settings/${argv.part}/assets`,
+    })
+    .pipe(gulp.dest(`${argv.buildpart}/_assets`));
+});
+
+/**
+ * The prebuild action
+ */
+gulp.task('pre-build', function preBuild() {
+  return gulp.src('./src/**/*.{ts,js,gs,json,html}').pipe(gulp.dest(`./${argv.buildpart}`));
+});
+
+/**
+ * Runs clasp
+ */
+gulp.task('clasp', function (cb) {
+  cb = cb || console.log;
+  const cmd = spawn('./node_modules/.bin/clasp', ['push'], {
+    stdio: 'inherit',
+  });
+  cmd.on('close', function (code) {
+    console.log('clasp exited with code ' + code);
+    cb(code);
   });
 });
 
-/**
- * Bumps the version of the Chrome Web Store manifest.
- */
-gulp.task('bump', (cb) => {
-  gulp.src('webstore/manifest.json')
-    .pipe(jeditor((json) => {
-      json.version = String(Number(json.version) + 1);
-      return json;
-    }))
-    .pipe(gulp.dest('webstore'))
-    .on('end', cb);
+gulp.task('preparation-update-client-code', function (cb) {
+  return gulp.src('./clients/src/**/*.{ts,js,gs,json,html}').pipe(gulp.dest('./clients/build'));
 });
 
-/**
- * Builds a new CRX zip file.
- */
-gulp.task('compress', ['bump'], (cb) => {
-  gulp.src('webstore/*')
-    .pipe(zip('crx.zip'))
-    .pipe(gulp.dest('build')
-    .on('end', cb));
-});
-
-/**
- * Uploads the CRX zip file to the Chrome Web Store
- */
-gulp.task('upload', ['compress'], (cb) => {
-  const crx = fs.createReadStream('./build/crx.zip');
-  getWebStore().uploadExisting(crx).then((res) => {
-    if (res.uploadState === 'FAILURE') {
-      const error = res.itemError[0].error_detail;
-      return cb(error);
+gulp.task('preparation-update-clients', function (cb) {
+  let version = '';
+  const cmd = spawn('./node_modules/.bin/clasp', ['versions'], {
+    stdio: 'pipe',
+  });
+  cmd.stdout.on('data', function (data) {
+    if (version === '') {
+      const match = data.toString().match(/^(\d+).+?-/);
+      if (match && match.length) version = match[1];
     }
-    console.log('Draft uploaded to Chrome Web Store.');
-    cb();
-  }).catch(cb);
+  });
+  cmd.on('close', function (code) {
+    console.log(`clasp exit code: ${code}.`, `Version detected: ${version}`);
+    const appscript = JSON.parse(fs.readFileSync('./clients/src/appsscript.json'));
+    const claspjson = JSON.parse(fs.readFileSync('./.clasp.json'));
+    const index = appscript.dependencies.libraries.findIndex((lib) => lib.userSymbol === 'Library');
+    // console.log(`Lib is ${!~index ? 'NOT ' : ''}DETECTED`);
+    appscript.dependencies.libraries[index].version = version;
+    appscript.dependencies.libraries[index].libraryId = claspjson.scriptId;
+    appscript.dependencies.libraries[index].developmentMode = Object.prototype.hasOwnProperty.call(
+      argv,
+      'developmentMode',
+    );
+
+    // fs.mkdirSync('./clients/build', { recursive: true });
+    fs.writeFileSync('./clients/build/appsscript.json', JSON.stringify(appscript, null, '  '), { flag: 'w' });
+    cb(code);
+  });
 });
 
-/**
- * Publishes the draft Chrome Web Store listing.
- */
-gulp.task('publish', ['upload'], (cb) => {
-  getWebStore().publish().then((res) => {
-    console.log('Chrome Web Store draft published.');
-  }).catch(cb);
-});
+gulp.task('update-clients-bulk', function (cb) {
+  const projects = JSON.parse(
+    /start[\s\S]*?`([\s\S]+?)`[\s\S]*?end/.exec(fs.readFileSync(`./settings/${argv.part}/assets/index.js`))[1],
+  );
+  // cb(projects);
+  const clientsList = argv['clients-list'] ? JSON.parse(`[${argv['clients-list']}]`) : undefined;
+  const tasks = projects.projects
+    .map((project) => (_cb_) => {
+      // _cb_ = _cb_ || console.log;
 
-/**
- * Authorizes access to the Chrome Web Store API. Only needs to be run once
- * when first setting up the project.
- */
-gulp.task('authorize', () => {
-  const credentials = require('./credentials/client_secret.json').installed;
-  const oAuth2Client = new google.auth.OAuth2(
-      credentials.client_id,
-      credentials.client_secret,
-      credentials.redirect_uris[0]);
-  const authUrl = oAuth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/chromewebstore'],
-  });
-  console.log('Authorize access to the CWS API by visiting this url:',
-      authUrl);
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-  rl.question('Enter the code from that page here: ', (code) => {
-      rl.close();
-      oAuth2Client.getToken(code, (err, token) => {
-        if (err) return console.log(err);
-        fs.writeFile('./credentials/token.json', JSON.stringify(token),
-            (err) => {
-              if (err) return console.error(err);
-            });
+      const claspjson = {
+        scriptId: project.projectId,
+      };
+      fs.writeFileSync('./clients/build/.clasp.json', JSON.stringify(claspjson));
+      console.log(project);
+      // cb(0);
+      const cmd = spawn('./../../node_modules/.bin/clasp', ['push', '--force'], {
+        stdio: 'inherit',
+        cwd: './clients/build',
       });
-  });
+      cmd.on('close', function (code) {
+        console.log('clasp exited with code ' + code);
+        _cb_(code);
+      });
+    })
+    .filter(
+      (_, i) =>
+        !clientsList ||
+        clientsList.includes(projects.projects[i].stage) ||
+        clientsList.includes(projects.projects[i].container) ||
+        clientsList.includes(projects.projects[i].projectId),
+    );
+  console.log(tasks);
+  return gulp.series(...tasks)(cb);
 });
 
 /**
- * Gets an instance of the Chrome Web Store listing using the stored credentials
- * and tokens.
- * @return {object} The Chrome Web Store listing object.
+ * Attention! Changes global `version` object
  */
-function getWebStore() {
-  const credentials = require('./credentials/client_secret.json');
-  const tokens = require('./credentials/token.json');
-  return cwsupload({
-    extensionId: CWS_ID,
-    clientId: credentials.installed.client_id,
-    clientSecret: credentials.installed.client_secret,
-    refreshToken: tokens.refresh_token
+gulp.task('update-version', async function (cb) {
+  version.splice(2);
+  const abbrevRef = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    stdio: 'pipe',
   });
-}
+
+  const short = spawn('git', ['rev-parse', '--short', 'HEAD'], {
+    stdio: 'pipe',
+  });
+
+  for await (const data of abbrevRef.stdout) version.push(data.toString().replace(/[\r\n]/g, ''));
+  for await (const data of short.stdout) version.push(data.toString().replace(/[\r\n]/g, ''));
+  return cb(0);
+});
+
+gulp.task('push-version', function (cb) {
+  const namedVersion = argv['push-version'] ? `${argv['push-version']}` : '';
+  const versionStr = `${version.join(' ')} ${namedVersion}`;
+
+  spawn('clasp', ['version', versionStr], {
+    stdio: 'pipe',
+  })
+    .stdout.on('data', (data) => console.info(data.toString().replace(/[\r\n]/g, '')))
+    .on('close', () => {
+      console.info(`${versionStr} is pushed.`);
+      cb(0);
+    });
+});
+
+// ======================================================================
+
+gulp.task('bulk', function (cb) {
+  const projects = JSON.parse(fs.readFileSync('./scripts/projects.json'));
+  const tasks = projects.projects.map((project) => (_cb_) => {
+    _cb_ = _cb_ || console.log;
+    const claspjson = {
+      scriptId: project.projectId,
+    };
+    fs.writeFileSync('./scripts/src/.clasp.json', JSON.stringify(claspjson));
+    console.log(project.projectId);
+    const cmd = spawn('./../../node_modules/.bin/clasp', ['push'], {
+      stdio: 'inherit',
+      cwd: './scripts/src',
+    });
+    cmd.on('close', function (code) {
+      console.log('clasp exited with code ' + code);
+      _cb_(code);
+    });
+  });
+  console.log(tasks);
+  return gulp.series(...tasks)(cb);
+});
+
+gulp.task('readversion', function (cb) {
+  let version = '';
+  cb = cb || console.log;
+  const cmd = spawn('./node_modules/.bin/clasp', ['versions'], {
+    stdio: 'pipe',
+  });
+  cmd.stdout.on('data', function (data) {
+    if (version === '') {
+      const match = data.toString().match(/^(\d+).+?-/);
+      if (match && match.length) version = match[1];
+    }
+  });
+  cmd.on('close', function (code) {
+    console.log('clasp exited with code ' + code, version);
+    const appscript = JSON.parse(fs.readFileSync('./scripts/src/appsscript.json'));
+    const index = appscript.dependencies.libraries.findIndex((lib) => lib.userSymbol === 'Luxcom');
+    console.log(`Lib is ${!~index ? 'NOT ' : ''}DETECTED`);
+    appscript.dependencies.libraries[index].version = version;
+    fs.writeFileSync('./scripts/src/appsscript.json', JSON.stringify(appscript, null, '  '));
+    cb(code);
+  });
+});
+
+gulp.task('update-clients', gulp.series('readversion', 'bulk'));
+
+gulp.task('readversion-prod', function (cb) {
+  let version = '';
+  cb = cb || console.log;
+  const cmd = spawn('./node_modules/.bin/clasp', ['versions'], {
+    stdio: 'pipe',
+  });
+
+  cmd.stdout.on('data', function (data) {
+    if (version === '') {
+      const match = data.toString().match(/^(\d+).+?-/);
+      if (match && match.length) version = match[1];
+    }
+  });
+  cmd.on('close', function (code) {
+    console.log('clasp exited with code ' + code, version);
+    const appscript = JSON.parse(fs.readFileSync('./scripts/src/appsscript.json'));
+    console.info(appscript);
+    const index = appscript.dependencies.libraries.findIndex((lib) => lib.userSymbol === 'Luxcom');
+    appscript.dependencies.libraries[index].version = version;
+    appscript.dependencies.libraries[index].libraryId = '1fRodYEJFBC3jTabfNabvAUglQo2FxtkZLkQL7I4ulgi1OMZpJLJV8NBu';
+    fs.writeFileSync('./scripts/src/appsscript.json', JSON.stringify(appscript, null, '  '));
+    cb(code);
+  });
+});
+
+gulp.task('start', function (done) {
+  process.argv.forEach((arg) => {
+    const match = /^-+(.+?)(=.+?)?$/.exec(arg);
+    if (match) argv[match[1]] = match[2] ? match[2].slice(1) : undefined;
+  });
+  console.log('Received parameters', argv);
+  if (!argv.part) done('"part" arg is requeried');
+  const seriesList = ['clean', 'preparation-clasp-json', 'preparation-assets', 'pre-build'];
+  if (Object.prototype.hasOwnProperty.call(argv, 'push-version'))
+    seriesList.push('clasp', 'update-version', 'push-version');
+
+  if (Object.prototype.hasOwnProperty.call(argv, 'update-clients')) {
+    seriesList.push(
+      'clean-clients',
+      'preparation-update-client-code',
+      'preparation-update-clients',
+      'update-clients-bulk',
+    );
+
+    const updateClientsvSeries = () => gulp.series(seriesList);
+    console.log('update-clients');
+    return updateClientsvSeries()(done);
+  }
+
+  if (!seriesList.includes('clasp')) seriesList.push('clasp');
+  const buildSeries = () => gulp.series(seriesList);
+  return Object.prototype.hasOwnProperty.call(argv, 'watch')
+    ? gulp.watch(
+        ['./src/**/*.{ts,js,gs,json,html}', './settings/**/*.{ts,js,gs,json,html}'],
+        { delay: watchDelay },
+        buildSeries(),
+      )
+    : buildSeries()(done);
+});

@@ -1,15 +1,11 @@
 {
   "name": "crop-sheet",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "An add-on for Google Sheets that allows you to easily remove extra rows and columns.",
   "main": "Code.js",
-  "scripts": {
-    "deploy": "clasp push && clasp version && gulp latest && gulp publish",
-    "lint": "gulp lint"
-  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/erickoledadevrel/crop-sheet.git"
+    "url": "git+https://github.com/contributorpw/crop-sheet.git"
   },
   "keywords": [
     "apps-script",
@@ -17,20 +13,41 @@
     "sheets"
   ],
   "author": "Eric Koleda <ekoleda+devrel@googlers.com>",
+  "contributors": [
+    {
+      "name": "Alex Ivanov <ai@contributor.pw>",
+      "url": "https://github.com/contributorpw"
+    }
+  ],
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/erickoledadevrel/crop-sheet/issues"
+    "url": "https://github.com/contributorpw/crop-sheet/issues"
   },
-  "homepage": "https://github.com/erickoledadevrel/crop-sheet",
+  "homepage": "https://github.com/contributorpw/crop-sheet",
+  "scripts": {
+    "build": "gulp start --part=prod --push-version --update-clients",
+    "dev": "gulp start --part=dev --watch",
+    "dev-version": "gulp start --part=dev --push-version",
+    "pull-dev": "cp ./settings/dev/.clasp.json ./ && json -I -f .clasp.json -e \"this.rootDir='src'\" && clasp pull && rm -rf ./settings/dev/assets && mv ./src/_assets ./settings/dev/assets",
+    "pull-prod": "cp ./settings/prod/.clasp.json ./ && json -I -f .clasp.json -e \"this.rootDir='src'\" && clasp pull && rm -rf ./settings/prod/assets && mv ./src/_assets ./settings/prod/assets",
+    "lnsett": "cd ./settings && rm -f .eslintrc && ln -s ./../src/.eslintrc .eslintrc",
+    "pretty": "prettier --write ."
+  },
   "devDependencies": {
-    "@google/clasp": "^1.3.0",
-    "chrome-webstore-upload": "^0.2.2",
-    "eslint-config-google": "^0.9.1",
-    "googleapis": "^31.0.2",
-    "gulp": "^3.9.1",
-    "gulp-eslint": "^4.0.2",
-    "gulp-json-editor": "^2.4.1",
-    "gulp-run-command": "0.0.9",
-    "gulp-zip": "^4.1.0"
+    "@google/clasp": "*",
+    "@types/google-apps-script": "*",
+    "clasp-types": "*",
+    "del": "*",
+    "eslint": "*",
+    "eslint-config-google": "*",
+    "eslint-config-prettier": "*",
+    "eslint-plugin-googleappsscript": "*",
+    "eslint-plugin-prettier": "*",
+    "gulp": "*",
+    "json": "*",
+    "prettier": "*"
+  },
+  "devSettings": {
+    "watchDelay": 900
   }
 }
