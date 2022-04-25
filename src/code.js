@@ -1,5 +1,5 @@
 /**
- * Crop Sheet add-on for Google Sheets. Allows users to remove excess rows and
+ * Crop & Trim add-on for Google Sheets™. Allows users to remove excess rows and
  * columns from their spreadsheet based on the current selection or the cells
  * that have data.
  * @OnlyCurrentDoc
@@ -80,7 +80,7 @@ function cropToRange(range) {
  *     message on.
  */
 function showCompleteMessage(spreadsheet) {
-  var title = 'Crop Sheet';
+  var title = 'Crop & Trim';
   var message = HtmlService.createHtmlOutputFromFile('complete_message').getContent();
   var timeoutSeconds = 8;
   spreadsheet.toast(message, title, timeoutSeconds);

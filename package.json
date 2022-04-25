@@ -1,11 +1,11 @@
 {
-  "name": "crop-sheet",
-  "version": "2.0.0",
-  "description": "An add-on for Google Sheets that allows you to easily remove extra rows and columns.",
+  "name": "crop-and-trim",
+  "version": "1.0.0",
+  "description": "An add-on for Google Sheets™ that allows you to easily remove extra rows and columns.",
   "main": "Code.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/contributorpw/crop-sheet.git"
+    "url": "git+https://github.com/contributorpw/crop-and-trim.git"
   },
   "keywords": [
     "apps-script",
@@ -21,9 +21,9 @@
   ],
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/contributorpw/crop-sheet/issues"
+    "url": "https://github.com/contributorpw/crop-and-trim/issues"
   },
-  "homepage": "https://github.com/contributorpw/crop-sheet",
+  "homepage": "https://github.com/contributorpw/crop-and-trim",
   "scripts": {
     "build": "gulp start --part=prod --push-version --update-clients",
     "dev": "gulp start --part=dev --watch",
